@@ -15,9 +15,9 @@ class Predictor(object):
         """
         self.model = model
 
-    def predict(X):
+    def predict(self, X):
         """
         Predict function documentation.
         X: what X is.
         """
-        model.fprop(X)
+        self.model.fprop(X)
