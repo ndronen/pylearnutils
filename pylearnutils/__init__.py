@@ -4,6 +4,18 @@ __author__ = 'Nicholas Dronen'
 __email__ = 'ndronen@gmail.com'
 __version__ = '0.1.0'
 
+import theano
+import numpy as np
+import cPickle
+
+def predict(model_file, X):
+    model = load_model(model_file)
+    return Predictor(model).predict(X)
+
+def load_model(model_file):
+    f = open(model_file)
+    return cPickle.load(f)
+
 class Predictor(object):
     """
     General comments about the class.
@@ -20,4 +32,8 @@ class Predictor(object):
         Predict function documentation.
         X: what X is.
         """
-        self.model.fprop(X)
+        X = theano.shared(
+            np.asarray(X, dtype=theano.config.floatX),
+            borrow=True)
+        f = theano.function([], outputs=self.model.fprop(X))
+        return f()
