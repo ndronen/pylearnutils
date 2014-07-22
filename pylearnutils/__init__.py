@@ -8,13 +8,17 @@ import theano
 import numpy as np
 import cPickle
 
+def load_model(model_file):
+    f = open(model_file)
+    return cPickle.load(f)
+
 def predict(model_file, X):
     model = load_model(model_file)
     return Predictor(model).predict(X)
 
-def load_model(model_file):
-    f = open(model_file)
-    return cPickle.load(f)
+def encode(model_file, X):
+    model = load_model(model_file)
+    return Encoder(model).encode(X)
 
 class Predictor(object):
     """
@@ -36,4 +40,26 @@ class Predictor(object):
             np.asarray(X, dtype=theano.config.floatX),
             borrow=True)
         f = theano.function([], outputs=self.model.fprop(X))
+        return f()
+
+class Encoder(object):
+    """
+    General comments about the class.
+    """
+    def __init__(self, model):
+        """
+        Constructor documentation.
+        model: what the model is.
+        """
+        self.model = model
+
+    def encode(self, X):
+        """
+        Predict function documentation.
+        X: what X is.
+        """
+        X = theano.shared(
+            np.asarray(X, dtype=theano.config.floatX),
+            borrow=True)
+        f = theano.function([], outputs=self.model.encode(X))
         return f()
