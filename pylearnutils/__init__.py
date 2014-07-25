@@ -31,15 +31,14 @@ class Predictor(object):
         """
         self.model = model
 
-    def predict(self, X):
+    def predict(self, X, return_all=False):
         """
         Predict function documentation.
         X: what X is.
         """
-        X = theano.shared(
-            np.asarray(X, dtype=theano.config.floatX),
-            borrow=True)
-        f = theano.function([], outputs=self.model.fprop(X))
+        X = theano.shared(np.asarray(X, dtype=theano.config.floatX))
+        outputs=self.model.fprop(X, return_all=return_all)
+        f = theano.function([], outputs=outputs)
         return f()
 
 class Encoder(object):
