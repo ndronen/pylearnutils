@@ -12,8 +12,9 @@ __email__ = "ndronen@gmail.com"
 import scipy.io 
 
 from pylearn2.datasets.sparse_dataset import SparseDataset
+from pylearn2.datasets.dense_design_matrix import DenseDesignMatrix
 
-class MatrixMarket(SparseDataset):
+class SparseMatrixMarket(SparseDataset):
     """
     A dataset for Market Matrix files.
 
@@ -21,13 +22,35 @@ class MatrixMarket(SparseDataset):
     ----------
     path : The path to the Market Matrix file.
     """
-    def __init__(self, path):
+    def __init__(self, path, transpose=False):
         """
         .. todo::
 
             WRITEME
         """
         X = scipy.io.mmread(path)
+        if transpose:
+            X = X.T
         super(MatrixMarket, self).__init__(
                 from_scipy_sparse_dataset=X)
+
+class MatrixMarket(DenseDesignMatrix):
+    """
+    A dataset for Market Matrix files.
+
+    Parameters
+    ----------
+    path : The path to the Market Matrix file.
+    """
+    def __init__(self, path, transpose=False):
+        """
+        .. todo::
+
+            WRITEME
+        """
+        X = scipy.io.mmread(path)
+        X = X.todense()
+        if transpose:
+            X = X.T
+        super(MatrixMarket, self).__init__(X=X)
 
