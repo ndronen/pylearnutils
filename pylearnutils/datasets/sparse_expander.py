@@ -28,7 +28,7 @@ class SparseExpanderDataset(Dataset):
     SparseExpanderDataset takes a numpy/scipy sparse matrix and calls .todense()
     as the batches are passed out of the iterator.
     """
-    def __init__(self, X_path=None, y_path=None, from_scipy_sparse_dataset=None, zipped_npy=False, center=False):
+    def __init__(self, X_path=None, y_path=None, from_scipy_sparse_dataset=None, zipped_npy=False, center=False, scale=False):
 
         self.X_path = X_path
         self.y_path = y_path
