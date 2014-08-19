@@ -14,6 +14,8 @@ import scipy.io
 from pylearn2.datasets.sparse_dataset import SparseDataset
 from pylearn2.datasets.dense_design_matrix import DenseDesignMatrix
 
+from scipy.sparse import issparse
+
 class SparseMatrixMarket(SparseDataset):
     """
     A dataset for Market Matrix files.
@@ -31,7 +33,8 @@ class SparseMatrixMarket(SparseDataset):
         X = scipy.io.mmread(path)
         if transpose:
             X = X.T
-        super(MatrixMarket, self).__init__(
+        X = X.tocsr()
+        super(SparseMatrixMarket, self).__init__(
                 from_scipy_sparse_dataset=X)
 
 class MatrixMarket(DenseDesignMatrix):
