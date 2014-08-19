@@ -1,5 +1,7 @@
 # From https://gist.github.com/ccsevers/10295174
 
+import numpy as np
+
 from pylearn2.datasets.dataset import Dataset
 from pylearn2.datasets.dense_design_matrix import DenseDesignMatrix
 
@@ -57,8 +59,7 @@ class SparseExpanderDataset(Dataset):
                 self.y = scipy.sparse.csr_matrix(
                     numpy.load(y_path).item(), dtype=floatX)
         else:
-            logger.info('... building from given sparse dataset')
-            self.X = from_scipy_sparse_dataset
+            self.y = None
 
         self.data_n_rows = self.X.shape[0]
         self.num_examples = self.data_n_rows
@@ -84,7 +85,11 @@ class SparseExpanderDataset(Dataset):
         if center:
             self.mean = self.X.mean(axis=0)
         if scale:
-            self.std = self.X.std(axis=0)
+            self.std = np.zeros(self.X.shape[0])
+            for i in range(self.X.shape[0]):
+                col = self.X.getcol(i)
+                dense = col.todense()
+                self.std[i] = dense.std()
 
         self.data_specs = (space, source)
         self.X_space = X_space
@@ -127,6 +132,9 @@ class SparseExpanderDataset(Dataset):
           return self.X
       else:
           return (self.X, self.y)
+
+    def get_num_examples(self):
+        return self.X.shape[0]
 
     @functools.wraps(Dataset.iterator)
     def iterator(self, mode=None, batch_size=None, num_batches=None,
@@ -193,8 +201,10 @@ class SparseExpanderDataset(Dataset):
         try:
             rval = self.X[indx].todense()
             if self.center:
+                # TODO: time this.
                 rval = rval - self.mean
             if self.scale:
+                # TODO: time this.
                 rval = rval / self.std
         except IndexError:
             # the ind of minibatch goes beyond the boundary
