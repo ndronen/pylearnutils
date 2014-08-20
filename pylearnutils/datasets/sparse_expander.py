@@ -30,7 +30,7 @@ class SparseExpanderDataset(Dataset):
     SparseExpanderDataset takes a numpy/scipy sparse matrix and calls .todense()
     as the batches are passed out of the iterator.
     """
-    def __init__(self, X_path=None, y_path=None, from_scipy_sparse_dataset=None, zipped_npy=False, center=False, scale=False):
+    def __init__(self, X_path=None, y_path=None, from_scipy_sparse_dataset=None, zipped_npy=False, center=False, scale=False, colmeans=None, colstds=None):
 
         self.X_path = X_path
         self.y_path = y_path
@@ -46,7 +46,7 @@ class SparseExpanderDataset(Dataset):
                     numpy.load(X_path).item(), dtype=floatX)
         else:
             logger.info('... building from given sparse dataset')
-            self.X = from_scipy_sparse_dataset
+            self.X = from_scipy_sparse_dataset.astype(floatX)
 
 
         if self.y_path != None:
@@ -83,13 +83,23 @@ class SparseExpanderDataset(Dataset):
 
         # Will this work with tensors?
         if center:
-            self.mean = self.X.mean(axis=0)
+            if colmeans is None:
+                print("Computing means of columns")
+                self.mean = self.X.mean(axis=0)
+                print("Done")
+            else:
+                self.mean = colmeans
         if scale:
-            self.std = np.zeros(self.X.shape[0])
-            for i in range(self.X.shape[0]):
-                col = self.X.getcol(i)
-                dense = col.todense()
-                self.std[i] = dense.std()
+            if colstds is None:
+                print("Computing stds of columns")
+                self.std = np.zeros(self.X.shape[0])
+                for i in range(self.X.shape[0]):
+                    col = self.X.getcol(i)
+                    dense = col.tolil().todense()
+                    self.std[i] = dense.std()
+                print("Done")
+            else:
+                self.std = colstds
 
         self.data_specs = (space, source)
         self.X_space = X_space
