@@ -84,20 +84,16 @@ class SparseExpanderDataset(Dataset):
         # Will this work with tensors?
         if center:
             if colmeans is None:
-                print("Computing means of columns")
                 self.mean = self.X.mean(axis=0)
-                print("Done")
             else:
                 self.mean = colmeans
         if scale:
             if colstds is None:
-                print("Computing stds of columns")
                 self.std = np.zeros(self.X.shape[0])
                 for i in range(self.X.shape[0]):
                     col = self.X.getcol(i)
                     dense = col.tolil().todense()
                     self.std[i] = dense.std()
-                print("Done")
             else:
                 self.std = colstds
 
