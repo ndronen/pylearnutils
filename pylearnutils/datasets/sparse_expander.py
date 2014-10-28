@@ -1,5 +1,6 @@
 # From https://gist.github.com/ccsevers/10295174
 
+import os.path
 import numpy as np
 
 from pylearn2.datasets.dataset import Dataset
@@ -83,11 +84,15 @@ class SparseExpanderDataset(Dataset):
 
         # Will this work with tensors?
         if center:
+            if os.path.exists(colmeans):
+                colmeans = np.load(colmeans)
             if colmeans is None:
                 self.mean = self.X.mean(axis=0)
             else:
                 self.mean = colmeans
         if scale:
+            if os.path.exists(colstds):
+                colstds = np.load(colstds)
             if colstds is None:
                 self.std = np.zeros(self.X.shape[0])
                 for i in range(self.X.shape[0]):
