@@ -60,5 +60,8 @@ class Encoder(object):
         X = theano.shared(
             np.asarray(X, dtype=theano.config.floatX),
             borrow=True)
-        f = theano.function([], outputs=self.model.encode(X))
+        try: 
+            f = theano.function([], outputs=self.model.encode(X))
+        except AttributeError:
+            f = theano.function([], outputs=self.model.fprop(X))
         return f()
