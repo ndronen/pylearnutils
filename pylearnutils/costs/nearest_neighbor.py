@@ -26,7 +26,10 @@ class NearestNeighborCost(Cost):
         """
         self.get_data_specs(model)[0].validate(data)
         X, Y = data
-        return self.cost(Y, model.reconstruct(X))
+        try:
+            return self.cost(Y, model.reconstruct(X))
+        except AttributeError:
+            return self.cost(Y, model.fprop(X))
 
     def get_data_specs(self, model):
         """
