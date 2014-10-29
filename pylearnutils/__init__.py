@@ -24,22 +24,22 @@ class Predictor(object):
     """
     General comments about the class.
     """
-    def __init__(self, model):
+    def __init__(self, model, return_all=False):
         """
         Constructor documentation.
         model: what the model is.
         """
         self.model = model
+        X = theano.tensor.matrix('X')
+        outputs = model.fprop(X, return_all=return_all)
+        self.f = theano.function([X], outputs=outputs)
 
-    def predict(self, X, return_all=False):
+    def predict(self, X):
         """
         Predict function documentation.
         X: what X is.
         """
-        X = theano.shared(np.asarray(X, dtype=theano.config.floatX))
-        outputs=self.model.fprop(X, return_all=return_all)
-        f = theano.function([], outputs=outputs)
-        return f()
+        return self.f(X)
 
 class Encoder(object):
     """
@@ -62,6 +62,10 @@ class Encoder(object):
             borrow=True)
         try: 
             f = theano.function([], outputs=self.model.encode(X))
+            return f()
         except AttributeError:
-            f = theano.function([], outputs=self.model.fprop(X))
-        return f()
+            # Assume that the model is an MLP, that the topmost layer was
+            # trained to reconstruct the input, and that we want the output
+            # of the penultimate layer.
+            f = theano.function([], outputs=self.model.fprop(X, return_all=True))
+            return f()[-2]
