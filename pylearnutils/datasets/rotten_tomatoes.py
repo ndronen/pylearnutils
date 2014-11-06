@@ -3,12 +3,14 @@ import unittest
 from collections import Counter
 
 import joblib
+import pandas as pd
+import numpy as np
 from sklearn.feature_extraction.text import CountVectorizer
 from pylearn2.datasets.dense_design_matrix import DenseDesignMatrix
 
 class RottenTomatoesSentimentDataset(DenseDesignMatrix):
 
-    def __init__(self, which_set, granularity='fine', dataset_path='/home/ndronen/proj/dissertation/projects/deeplsa/data/stanfordRottenTomatoesSentimentDatasetTreebank/', vectorizer=None):
+    def __init__(self, which_set, granularity='fine', dataset_path='/home/ndronen/proj/dissertation/projects/deeplsa/data/stanfordSentimentTreebank/', vectorizer=None, one_hot=False, task='classification'):
 
         if which_set not in ['train', 'dev', 'test']:
             raise ValueError('invalid which_set: ' + str(which_set) +
@@ -41,6 +43,19 @@ class RottenTomatoesSentimentDataset(DenseDesignMatrix):
 
         if granularity == 'binary':
             self._binarize_dataset()
+
+
+        if self.one_hot:
+            labels = dict((x, i) for (i, x) in enumerate(np.unique(self.y)))
+            one_hot = np.zeros((self.y.shape[0], len(labels)), dtype='float32')
+            for i in xrange(self.y.shape[0]):
+                label = self.y[i]
+                label_position = labels[label]
+                one_hot[i, label_position] = 1.
+            self.y = one_hot
+        else:
+            if self.task == 'regression':
+                self.y = self.y.reshape((self.y.shape[0], 1))
 
         self._check_dataset_size()
 
