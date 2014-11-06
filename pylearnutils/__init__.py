@@ -64,8 +64,26 @@ class Encoder(object):
             f = theano.function([], outputs=self.model.encode(X))
             return f()
         except AttributeError:
-            # Assume that the model is an MLP, that the topmost layer was
-            # trained to reconstruct the input, and that we want the output
-            # of the penultimate layer.
-            f = theano.function([], outputs=self.model.fprop(X, return_all=True))
-            return f()[-2]
+            try:
+                # Assume that the model is an MLP instance.
+                f = theano.function([],
+                        outputs=self.model.fprop(X, return_all=True))
+                return f()
+            except TypeError:
+                # Assume that the model is the layer of an MLP.  A single
+                # layer (e.g. Rectified Linear) usually lacks the return_all
+                # argument, so we exclude it.
+                f = theano.function([], outputs=self.model.fprop(X))
+                return f()
+
+    def decode(self, X):
+        """
+        Decode function documentation.
+        X: what X is.
+        """
+        X = theano.shared(
+            np.asarray(X, dtype=theano.config.floatX),
+            borrow=True)
+
+        f = theano.function([], outputs=self.model.decode(X))
+        return f()
