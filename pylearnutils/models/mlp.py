@@ -5,8 +5,8 @@ from pylearn2.utils import wraps, sharedX
 
 class LayerDelegator(Layer):
     def __init__(self, layer):
-        self.__dict__.update(locals())
-        del self.self
+        self.layer = layer
+        super(LayerDelegator, self).__init__()
 
     @wraps(Layer.set_input_space)
     def set_input_space(self, space):
@@ -74,11 +74,11 @@ class LayerDelegator(Layer):
     def get_l1_weight_decay(self, coeff):
         return self.layer.get_l1_weight_decay()
 
-    def __getattr__(self, name):
-        return getattr(self.layer, name)
+    def __getstate__(self):
+        return self.__dict__
 
-    def __setattr__(self, name, value):
-        setattr(self.layer, name, value)
+    def __setstate__(self, state):
+        self.__dict__.update(state)
 
 class WeightsFromNpyFileLayer(LayerDelegator):
     """
@@ -101,10 +101,9 @@ class WeightsFromNpyFileLayer(LayerDelegator):
     layer : pylearn2.models.mlp.Layer
         A Layer instance (e.g. Tanh, RectifiedLinear)
     """
-    def __init__(self, path, layer):
+    def __init__(self, path, layer, **kwargs):
         super(WeightsFromNpyFileLayer, self).__init__(layer)
-        self.__dict__.update(locals())
-        del self.self
+        self.path = path
 
     @wraps(Layer.set_input_space)
     def set_input_space(self, space):
@@ -112,3 +111,15 @@ class WeightsFromNpyFileLayer(LayerDelegator):
         W = np.load(self.path)
         W = W.astype(theano.config.floatX)
         self.layer.set_weights(W)
+
+    def __getattr__(self, name):
+        return getattr(self.layer, name)
+
+    def __setattr__(self, name, value):
+        self.__dict__[name] = value
+
+    def __getstate__(self):
+        return self.__dict__
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
