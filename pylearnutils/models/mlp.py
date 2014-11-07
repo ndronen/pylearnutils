@@ -3,38 +3,14 @@ import theano
 from pylearn2.models.mlp import Layer
 from pylearn2.utils import wraps, sharedX
 
-class WeightsFromNpyFileLayer(Layer):
-    """
-    The default behavior of pylearn2 classes is to initialize weight
-    matrices with random values.  If you want more control over the
-    weights, you can create a dense matrix out-of-band, save it to disc,
-    then load it like so:
-
-        !obj:pylearnutils.models.mlp.WeightsFromNpyFileLayer {
-            path: 'W.npy',
-            layer: !obj:pylearn2.models.mlp.Tanh {
-                ...
-            }
-        },
-
-    Parameters
-    ----------
-    path : str
-        Path to a .npy file containing a dense numpy weight matrix.
-    layer : pylearn2.models.mlp.Layer
-        A Layer instance (e.g. Tanh, RectifiedLinear)
-    """
-    def __init__(self, path, layer):
+class LayerDelegator(Layer):
+    def __init__(self, layer):
         self.__dict__.update(locals())
         del self.self
 
     @wraps(Layer.set_input_space)
     def set_input_space(self, space):
         self.layer.set_input_space(space)
-        W = np.load(self.path)
-        #W = sharedX(W)
-        W = W.astype(theano.config.floatX)
-        self.layer.set_weights(W)
 
     @wraps(Layer.get_params)
     def get_params(self):
@@ -103,3 +79,36 @@ class WeightsFromNpyFileLayer(Layer):
 
     def __setattr__(self, name, value):
         setattr(self.layer, name, value)
+
+class WeightsFromNpyFileLayer(LayerDelegator):
+    """
+    The default behavior of pylearn2 classes is to initialize weight
+    matrices with random values.  If you want more control over the
+    weights, you can create a dense matrix out-of-band, save it to disc,
+    then load it like so:
+
+        !obj:pylearnutils.models.mlp.WeightsFromNpyFileLayer {
+            path: 'W.npy',
+            layer: !obj:pylearn2.models.mlp.Tanh {
+                ...
+            }
+        },
+
+    Parameters
+    ----------
+    path : str
+        Path to a .npy file containing a dense numpy weight matrix.
+    layer : pylearn2.models.mlp.Layer
+        A Layer instance (e.g. Tanh, RectifiedLinear)
+    """
+    def __init__(self, path, layer):
+        super(WeightsFromNpyFileLayer, self).__init__(layer)
+        self.__dict__.update(locals())
+        del self.self
+
+    @wraps(Layer.set_input_space)
+    def set_input_space(self, space):
+        self.layer.set_input_space(space)
+        W = np.load(self.path)
+        W = W.astype(theano.config.floatX)
+        self.layer.set_weights(W)
