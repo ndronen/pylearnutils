@@ -91,7 +91,8 @@ class WeightsFromNpyFileLayer(LayerDelegator):
             path: 'W.npy',
             layer: !obj:pylearn2.models.mlp.Tanh {
                 ...
-            }
+            },
+            freeze_params: False
         },
 
     Parameters
@@ -100,10 +101,14 @@ class WeightsFromNpyFileLayer(LayerDelegator):
         Path to a .npy file containing a dense numpy weight matrix.
     layer : pylearn2.models.mlp.Layer
         A Layer instance (e.g. Tanh, RectifiedLinear)
+    freeze_params : bool
+        Whether to freeze the weights so they are not modified during
+        training.
     """
-    def __init__(self, path, layer, **kwargs):
+    def __init__(self, path, layer, freeze_params=False, **kwargs):
         super(WeightsFromNpyFileLayer, self).__init__(layer)
         self.path = path
+        self.freeze_params = freeze_params
 
     @wraps(Layer.set_input_space)
     def set_input_space(self, space):
@@ -111,6 +116,12 @@ class WeightsFromNpyFileLayer(LayerDelegator):
         W = np.load(self.path)
         W = W.astype(theano.config.floatX)
         self.layer.set_weights(W)
+
+    @wraps(Layer.get_params)
+    def get_params(self):
+        if self.freeze_params:
+            return []
+        return self.layer.get_params()
 
     def __getattr__(self, name):
         return getattr(self.layer, name)
