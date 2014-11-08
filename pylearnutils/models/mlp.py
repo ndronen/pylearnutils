@@ -1,7 +1,7 @@
 import numpy as np
 import theano
 from pylearn2.models.mlp import Layer
-from pylearn2.utils import wraps, sharedX
+from pylearn2.utils import wraps
 
 class LayerDelegator(Layer):
     def __init__(self, layer):
