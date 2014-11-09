@@ -74,6 +74,10 @@ class LayerDelegator(Layer):
     def get_l1_weight_decay(self, coeff):
         return self.layer.get_l1_weight_decay()
 
+    @wraps(Layer._modify_updates)
+    def _modify_updates(self, updates):
+        return self.layer._modify_updates(updates)
+
     def __getstate__(self):
         return self.__dict__
 
