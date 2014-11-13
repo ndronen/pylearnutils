@@ -1,3 +1,4 @@
+import sys
 import os
 import unittest
 from collections import Counter
@@ -98,7 +99,7 @@ class RottenTomatoesLoader(object):
         sentences = pd.read_csv(sentences_file, delimiter='\t')
         if idx is not None:
             sentences = sentences[sentences.sentence_index.isin(idx)]
-        return sentences.sentence
+        return sentences.sentence.as_matrix()
 
     def _load_phrase_ids(self, sentences):
         dictionary_file = self.dataset_path + 'dictionary.txt'
@@ -111,14 +112,14 @@ class RottenTomatoesLoader(object):
             dictionary.iloc[:, 1].astype(int).tolist()))
 
         # Return phrase ID of each sentence.
-        sentence_ids = np.zeros(shape=(len(sentences)))
+        sentence_idxs = np.zeros(shape=(len(sentences)))
         for i, sentence in enumerate(sentences):
             try:
-                sentence_ids[i] = phrases[sentence]
+                sentence_idxs[i] = phrases[sentence]
             except KeyError:
                 print("no phrase ID for sentence: " + sentence)
 
-        return sentence_ids
+        return sentence_idxs
 
     def _load_labels(self, phrase_ids=None):
         labels_file = self.dataset_path + 'sentiment_labels.txt'
@@ -154,10 +155,9 @@ class RottenTomatoesLoader(object):
         classes = np.ceil(5*floats)
         classes[classes > 5] = 5
         classes[classes < 1] = 1
-        return classes
+        return classes.astype(np.int)
 
 class RottenTomatoesBagOfWordsDataset(DenseDesignMatrix):
-
     def __init__(self, which_set, granularity='fine', dataset_path='/home/ndronen/proj/dissertation/projects/deeplsa/data/stanfordSentimentTreebank/', vectorizer=None, one_hot=False, task='classification'):
 
         self.__dict__.update(locals())
@@ -171,16 +171,16 @@ class RottenTomatoesBagOfWordsDataset(DenseDesignMatrix):
         # very negative).
         ###################################################################
         if self.vectorizer is None:
-            cv = CountVectorizer(input='content')
+            self.vectorizer = CountVectorizer(input='content')
             train_loader = RottenTomatoesLoader(
                 'train', 'fine', dataset_path)
-            cv.fit(train_loader.sentences)
+            self.vectorizer.fit(train_loader.sentences)
     
         self.loader = RottenTomatoesLoader(
                 which_set, granularity, dataset_path)
 
         self.y = np.array(self.loader.labels)
-        self.X = cv.transform(self.loader.sentences).todense()
+        self.X = self.vectorizer.transform(self.loader.sentences).todense()
 
         if self.one_hot:
             labels = dict((x, i) for (i, x) in enumerate(np.unique(self.y)))
@@ -199,6 +199,108 @@ class RottenTomatoesBagOfWordsDataset(DenseDesignMatrix):
     def __getattr__(self, name):
         return getattr(self.loader, name)
 
+class Subsequence(object):
+    """
+    """
+    def __init__(self, sequence, k):
+        self.subsequences = zip(*(sequence[i:] for i in range(k)))
+
+    def __iter__(self):
+        return iter(self.subsequences)
+
+class RottenTomatoesGroundHogIterator(object):
+    """
+    """
+    def __init__(self, which_set, granularity='fine', dataset_path='/home/ndronen/proj/dissertation/projects/deeplsa/data/stanfordSentimentTreebank/', vectorizer=None, task='classification', seqlen=3):
+
+        self.__dict__.update(locals())
+        del self.self
+
+        ###################################################################
+        # This is specific to the sequence model.  We want to assign an
+        # integer to each word in the vocabulary.  To do this, fit a
+        # count vectorizer to the training set.  If a word vectorizes
+        # to the 0 vector, the integer assigned to the word is the size
+        # of the vocabulary.
+        ###################################################################
+        if self.vectorizer is None:
+            self.vectorizer = CountVectorizer(input='content')
+            train_loader = RottenTomatoesLoader(
+                'train', 'fine', dataset_path)
+            self.vectorizer.fit(train_loader.sentences)
+    
+        self.loader = RottenTomatoesLoader(
+                which_set, granularity, dataset_path)
+
+        #self.y = np.array(self.loader.labels)
+
+        self.sentence_idx = 0
+        self.sentence_iter = None
+        #self.tokens = []
+        #self.token_ids = []
+        #self.token_idx = 0
+
+    def __getattr__(self, name):
+        return getattr(self.loader, name)
+
+    def __iter__(self):
+        return self
+
+    def next(self):
+        """
+        """
+        ###################################################################
+        # At this point we have a set of labels and corresponding sentences.
+        # We need to convert each sentence into a sequence of subsequences
+        # of some user-specified length `seqlen`.  If `seqlen` is 3, then,
+        #
+        #     "This is a sentence in a file"
+        #
+        # becomes
+        #
+        #   [THIS_ID, IS_ID, A_ID],
+        #   [IS_ID, A_ID, SENTENCE_ID],
+        #   [A_ID, SENTENCE_ID, IN_ID],
+        #   ...,
+        #   [IN_ID, A_ID, FILE_ID]]
+        #
+        # Each of these subsequences is a training example.
+        # 
+        # For the first pass through this implementation, I will just map
+        # each sentence to a single uninterrupted (and hence variable-length)
+        # sequence of term IDs.
+        ###################################################################
+
+        while True:
+            # We've reached the end of the corpus.  For now just stop.
+            if self.sentence_idx == len(self.sentences):
+                self.sentence_iter = None
+                self.sentence_idx = 0
+                raise StopIteration()
+
+            if self.sentence_iter is None:
+                sentence = self.sentences[self.sentence_idx]
+                tokens = self.vectorizer.build_analyzer()(sentence)
+                token_ids = []
+                for token in tokens:
+                    try:
+                        token_ids.append(self.vectorizer.vocabulary_[token])
+                    except KeyError:
+                        token_ids.append(len(self.vectorizer.vocabulary_))
+                self.sentence_iter = iter(Subsequence(token_ids, self.seqlen))
+
+            target = self.labels[self.sentence_idx]
+
+            try:
+                seq = self.sentence_iter.next()
+                return seq, target, -1
+            except StopIteration:
+                # We've reached the end of the sentence or the sentence
+                # is shorter than seqlen.
+                self.sentence_iter = None
+                self.sentence_idx += 1
+                continue
+
 
 class TestRottenTomatoesBagOfWordsDataset(unittest.TestCase):
     def write_sentences(self, sentences, path):
@@ -209,6 +311,7 @@ class TestRottenTomatoesBagOfWordsDataset(unittest.TestCase):
                 except TypeError:
                     raise TypeError("invalid sentence? " + str(sentence))
 
+    @unittest.skip("only use this to write out the dataset to files")
     def test_write_dataset(self):
         rt = RottenTomatoesBagOfWordsDataset(
                 which_set='train', granularity='fine')
@@ -268,6 +371,19 @@ class TestRottenTomatoesLoader(unittest.TestCase):
         self.assertEqual(loader.map_float_to_target([0.8001]), 5)
         self.assertEqual(loader.map_float_to_target([1.]), 5)
         self.assertEqual(loader.map_float_to_target([2.]), 5)
+
+class TestRottenTomatoesGroundHogIterator(unittest.TestCase):
+
+    def test_init(self):
+        rt = RottenTomatoesGroundHogIterator(
+                which_set='train', granularity='fine')
+        iterator = iter(rt)
+        while True:
+            try:
+                print(iterator.next())
+            except StopIteration:
+                print("Done")
+
 
 if __name__ == '__main__':
     unittest.main()
