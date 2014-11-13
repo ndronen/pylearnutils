@@ -8,9 +8,8 @@ import numpy as np
 from sklearn.feature_extraction.text import CountVectorizer
 from pylearn2.datasets.dense_design_matrix import DenseDesignMatrix
 
-class RottenTomatoesSentimentDataset(DenseDesignMatrix):
-
-    def __init__(self, which_set, granularity='fine', dataset_path='/home/ndronen/proj/dissertation/projects/deeplsa/data/stanfordSentimentTreebank/', vectorizer=None, one_hot=False, task='classification'):
+class RottenTomatoesLoader(object):
+    def __init__(self, which_set, granularity='fine', dataset_path='/home/ndronen/proj/dissertation/projects/deeplsa/data/stanfordSentimentTreebank/'):
 
         if which_set not in ['train', 'dev', 'test']:
             raise ValueError('invalid which_set: ' + str(which_set) +
@@ -27,44 +26,18 @@ class RottenTomatoesSentimentDataset(DenseDesignMatrix):
         self.__dict__.update(locals())
         del self.self
 
-        if self.vectorizer is None:
-            cv = CountVectorizer(input='content')
-            idx = self._load_indices('train')
-            train_sentences = self._load_sentences(idx)
-            cv.fit(train_sentences)
-    
         self.idx = self._load_indices(which_set)
         self.sentences = self._load_sentences(self.idx)
         self.phrase_ids = self._load_phrase_ids(self.sentences)
         self.labels = self._load_labels(self.phrase_ids)
 
-        self.X = cv.transform(self.sentences).todense()
-        self.y = np.array(self.labels)
-
         if granularity == 'binary':
-            self._binarize_dataset()
-
-
-        if self.one_hot:
-            labels = dict((x, i) for (i, x) in enumerate(np.unique(self.y)))
-            one_hot = np.zeros((self.y.shape[0], len(labels)), dtype='float32')
-            for i in xrange(self.y.shape[0]):
-                label = self.y[i]
-                label_position = labels[label]
-                one_hot[i, label_position] = 1.
-            self.y = one_hot
-        else:
-            if self.task == 'regression':
-                self.y = self.y.reshape((self.y.shape[0], 1))
+            self.binarize_dataset()
 
         self._check_dataset_size()
 
-        super(RottenTomatoesSentimentDataset, self).__init__(X=self.X, y=self.y)
-
-    def _binarize_dataset(self):
-        neutral = self.y == 3
-        self.X = self.X[~neutral, :]
-        self.y = self.y[~neutral]
+    def binarize_dataset(self):
+        neutral = self.labels == 3
         self.sentences = self.sentences[~neutral]
         self.phrase_ids = self.phrase_ids[~neutral]
         self.labels = self.labels[~neutral]
@@ -82,24 +55,24 @@ class RottenTomatoesSentimentDataset(DenseDesignMatrix):
         ###################################################################
         if self.granularity == 'fine':
             if self.which_set == 'train':
-                assert self.X.shape[0] == 8544
-                assert self.y.shape[0] == 8544
+                assert len(self.sentences) == 8544
+                assert len(self.labels) == 8544
             elif self.which_set == 'dev':
-                assert self.X.shape[0] == 1101
-                assert self.y.shape[0] == 1101
+                assert len(self.sentences) == 1101
+                assert len(self.labels) == 1101
             else:
-                assert self.X.shape[0] == 2210
-                assert self.y.shape[0] == 2210
+                assert len(self.sentences) == 2210
+                assert len(self.labels) == 2210
         else:
             if self.which_set == 'train':
-                assert self.X.shape[0] == 6920
-                assert self.y.shape[0] == 6920
+                assert len(self.sentences) == 6920
+                assert len(self.labels) == 6920
             elif self.which_set == 'dev':
-                assert self.X.shape[0] == 872
-                assert self.y.shape[0] == 872
+                assert len(self.sentences) == 872
+                assert len(self.labels) == 872
             else:
-                assert self.X.shape[0] == 1821
-                assert self.y.shape[0] == 1821
+                assert len(self.sentences) == 1821
+                assert len(self.labels) == 1821
 
     def _load_indices(self, which_set):
         split_file = self.dataset_path + 'datasetSplit.txt'
@@ -150,24 +123,24 @@ class RottenTomatoesSentimentDataset(DenseDesignMatrix):
     def _load_labels(self, phrase_ids=None):
         labels_file = self.dataset_path + 'sentiment_labels.txt'
         # phrase ids|sentiment values
-        labels = pd.read_csv(labels_file, delimiter='|')
+        label_data = pd.read_csv(labels_file, delimiter='|')
 
         # There are duplicate sentences.  For all of these duplicates,
         # a given pair of identical sentences appears to map to a
         # single sentiment value, so just tolerate the duplicates
         # so as to preserve the same n as in other reported results.
         if phrase_ids is not None:
-            values = []
+            labels = []
             for phrase_id in phrase_ids:
-                row_idx = labels['phrase ids'] == phrase_id
-                value = labels.loc[row_idx, 'sentiment values'].values[0]
-                values.append(value)
+                row_idx = label_data['phrase ids'] == phrase_id
+                label = label_data.loc[row_idx, 'sentiment values'].values[0]
+                labels.append(label)
         else:
-            values = labels['phrase ids'].tolist()
-        values = self._map_float_to_target(values)
-        return values
+            labels = label_data['phrase ids'].tolist()
 
-    def _map_float_to_target(self, floats):
+        return self.map_float_to_target(labels)
+
+    def map_float_to_target(self, floats):
         ###################################################################
         # From the dataset's README.txt:
         #
@@ -183,7 +156,51 @@ class RottenTomatoesSentimentDataset(DenseDesignMatrix):
         classes[classes < 1] = 1
         return classes
 
-class TestRottenTomatoesSentimentDataset(unittest.TestCase):
+class RottenTomatoesBagOfWordsDataset(DenseDesignMatrix):
+
+    def __init__(self, which_set, granularity='fine', dataset_path='/home/ndronen/proj/dissertation/projects/deeplsa/data/stanfordSentimentTreebank/', vectorizer=None, one_hot=False, task='classification'):
+
+        self.__dict__.update(locals())
+        del self.self
+
+        ###################################################################
+        # This is specific to the bag-of-words model.  It appears that in
+        # the literature they use the vocabulary of the entire training
+        # set even when they train only on the reviews with labels that 
+        # are not neutral (i.e. very positive, positive, negative,
+        # very negative).
+        ###################################################################
+        if self.vectorizer is None:
+            cv = CountVectorizer(input='content')
+            train_loader = RottenTomatoesLoader(
+                'train', 'fine', dataset_path)
+            cv.fit(train_loader.sentences)
+    
+        self.loader = RottenTomatoesLoader(
+                which_set, granularity, dataset_path)
+
+        self.y = np.array(self.loader.labels)
+        self.X = cv.transform(self.loader.sentences).todense()
+
+        if self.one_hot:
+            labels = dict((x, i) for (i, x) in enumerate(np.unique(self.y)))
+            one_hot = np.zeros((self.y.shape[0], len(labels)), dtype='float32')
+            for i in xrange(self.y.shape[0]):
+                label = self.y[i]
+                label_position = labels[label]
+                one_hot[i, label_position] = 1.
+            self.y = one_hot
+        else:
+            if self.task == 'regression':
+                self.y = self.y.reshape((self.y.shape[0], 1))
+
+        super(RottenTomatoesBagOfWordsDataset, self).__init__(X=self.X, y=self.y)
+
+    def __getattr__(self, name):
+        return getattr(self.loader, name)
+
+
+class TestRottenTomatoesBagOfWordsDataset(unittest.TestCase):
     def write_sentences(self, sentences, path):
         with open(path, "w") as f:
             for sentence in sentences:
@@ -192,61 +209,65 @@ class TestRottenTomatoesSentimentDataset(unittest.TestCase):
                 except TypeError:
                     raise TypeError("invalid sentence? " + str(sentence))
 
-    def write_dataset(self):
-        rt = RottenTomatoesSentimentDataset(which_set='train', granularity='fine')
+    def test_write_dataset(self):
+        rt = RottenTomatoesBagOfWordsDataset(
+                which_set='train', granularity='fine')
         joblib.dump(rt.X, "sentiment-treebank-train-fine-X.joblib")
         joblib.dump(rt.y, "sentiment-treebank-train-fine-y.joblib")
         self.write_sentences(rt.sentences,
             "sentiment-treebank-train-fine-sentences.txt")
 
-        rt = RottenTomatoesSentimentDataset('dev', granularity='fine')
+        rt = RottenTomatoesBagOfWordsDataset('dev', granularity='fine')
         joblib.dump(rt.X, "sentiment-treebank-dev-fine-X.joblib")
         joblib.dump(rt.y, "sentiment-treebank-dev-fine-y.joblib")
         self.write_sentences(rt.sentences,
             "sentiment-treebank-dev-fine-sentences.txt")
 
-        rt = RottenTomatoesSentimentDataset('test', granularity='fine')
+        rt = RottenTomatoesBagOfWordsDataset('test', granularity='fine')
         joblib.dump(rt.X, "sentiment-treebank-test-fine-X.joblib")
         joblib.dump(rt.y, "sentiment-treebank-test-fine-y.joblib")
         self.write_sentences(rt.sentences,
             "sentiment-treebank-test-fine-sentences.txt")
 
-        rt = RottenTomatoesSentimentDataset(which_set='train', granularity='binary')
+        rt = RottenTomatoesBagOfWordsDataset(
+                which_set='train', granularity='binary')
         joblib.dump(rt.X, "sentiment-treebank-train-binary-X.joblib")
         joblib.dump(rt.y, "sentiment-treebank-train-binary-y.joblib")
         self.write_sentences(rt.sentences,
             "sentiment-treebank-train-binary-sentences.txt")
 
-        rt = RottenTomatoesSentimentDataset('dev', granularity='binary')
+        rt = RottenTomatoesBagOfWordsDataset('dev', granularity='binary')
         joblib.dump(rt.X, "sentiment-treebank-dev-binary-X.joblib")
         joblib.dump(rt.y, "sentiment-treebank-dev-binary-y.joblib")
         self.write_sentences(rt.sentences,
             "sentiment-treebank-dev-binary-sentences.txt")
 
-        rt = RottenTomatoesSentimentDataset('test', granularity='binary')
+        rt = RottenTomatoesBagOfWordsDataset('test', granularity='binary')
         joblib.dump(rt.X, "sentiment-treebank-test-binary-X.joblib")
         joblib.dump(rt.y, "sentiment-treebank-test-binary-y.joblib")
         self.write_sentences(rt.sentences,
             "sentiment-treebank-test-binary-sentences.txt")
 
-    def test_map_float_to_target(self):
-        rt = RottenTomatoesSentimentDataset('train', granularity='fine')
+class TestRottenTomatoesLoader(unittest.TestCase):
 
-        self.assertEqual(rt._map_float_to_target([0.0]), 1)
-        self.assertEqual(rt._map_float_to_target([0.2]), 1)
+    def testmap_float_to_target(self):
+        loader = RottenTomatoesLoader('train', granularity='fine')
 
-        self.assertEqual(rt._map_float_to_target([0.2001]), 2)
-        self.assertEqual(rt._map_float_to_target([0.4]), 2)
+        self.assertEqual(loader.map_float_to_target([0.0]), 1)
+        self.assertEqual(loader.map_float_to_target([0.2]), 1)
 
-        self.assertEqual(rt._map_float_to_target([0.4001]), 3)
-        self.assertEqual(rt._map_float_to_target([0.6]), 3)
+        self.assertEqual(loader.map_float_to_target([0.2001]), 2)
+        self.assertEqual(loader.map_float_to_target([0.4]), 2)
 
-        self.assertEqual(rt._map_float_to_target([0.6001]), 4)
-        self.assertEqual(rt._map_float_to_target([0.8]), 4)
+        self.assertEqual(loader.map_float_to_target([0.4001]), 3)
+        self.assertEqual(loader.map_float_to_target([0.6]), 3)
 
-        self.assertEqual(rt._map_float_to_target([0.8001]), 5)
-        self.assertEqual(rt._map_float_to_target([1.]), 5)
-        self.assertEqual(rt._map_float_to_target([2.]), 5)
+        self.assertEqual(loader.map_float_to_target([0.6001]), 4)
+        self.assertEqual(loader.map_float_to_target([0.8]), 4)
+
+        self.assertEqual(loader.map_float_to_target([0.8001]), 5)
+        self.assertEqual(loader.map_float_to_target([1.]), 5)
+        self.assertEqual(loader.map_float_to_target([2.]), 5)
 
 if __name__ == '__main__':
     unittest.main()
