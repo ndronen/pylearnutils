@@ -31,7 +31,7 @@ class SparseExpanderDataset(Dataset):
     SparseExpanderDataset takes a numpy/scipy sparse matrix and calls .todense()
     as the batches are passed out of the iterator.
     """
-    def __init__(self, X_path=None, y_path=None, from_scipy_sparse_dataset=None, zipped_npy=False, center=False, scale=False, colmeans=None, colstds=None):
+    def __init__(self, X_path=None, y_path=None, from_scipy_sparse_dataset=None, zipped_npy=False, means_path=None, stds_path=None):
 
         self.X_path = X_path
         self.y_path = y_path
@@ -82,25 +82,11 @@ class SparseExpanderDataset(Dataset):
             space = CompositeSpace((X_space, y_space))
             source = (X_source, y_source)
 
-        # Will this work with tensors?
-        if center:
-            if os.path.exists(colmeans):
-                colmeans = np.load(colmeans)
-            if colmeans is None:
-                self.mean = self.X.mean(axis=0)
-            else:
-                self.mean = colmeans
-        if scale:
-            if os.path.exists(colstds):
-                colstds = np.load(colstds)
-            if colstds is None:
-                self.std = np.zeros(self.X.shape[0])
-                for i in range(self.X.shape[0]):
-                    col = self.X.getcol(i)
-                    dense = col.tolil().todense()
-                    self.std[i] = dense.std()
-            else:
-                self.std = colstds
+        if means_path is not None:
+            self.means = np.load(means_path)
+
+        if stds_path is not None:
+            self.stds = np.load(stds_path)
 
         self.data_specs = (space, source)
         self.X_space = X_space
@@ -212,11 +198,9 @@ class SparseExpanderDataset(Dataset):
         try:
             rval = self.X[indx].todense()
             if self.center:
-                # TODO: time this.
-                rval = rval - self.mean
+                rval = rval - self.means
             if self.scale:
-                # TODO: time this.
-                rval = rval / self.std
+                rval = rval / self.stds
         except IndexError:
             # the ind of minibatch goes beyond the boundary
             import ipdb; ipdb.set_trace()
