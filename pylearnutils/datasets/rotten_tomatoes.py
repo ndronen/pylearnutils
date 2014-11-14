@@ -211,7 +211,7 @@ class Subsequence(object):
 class RottenTomatoesGroundHogIterator(object):
     """
     """
-    def __init__(self, which_set, granularity='fine', dataset_path='/home/ndronen/proj/dissertation/projects/deeplsa/data/stanfordSentimentTreebank/', vectorizer=None, task='classification', seqlen=3):
+    def __init__(self, which_set, granularity='fine', dataset_path='/home/ndronen/proj/dissertation/projects/deeplsa/data/stanfordSentimentTreebank/', vectorizer=None, task='classification', seq_len=2):
 
         self.__dict__.update(locals())
         del self.self
@@ -232,13 +232,11 @@ class RottenTomatoesGroundHogIterator(object):
         self.loader = RottenTomatoesLoader(
                 which_set, granularity, dataset_path)
 
-        #self.y = np.array(self.loader.labels)
-
         self.sentence_idx = 0
         self.sentence_iter = None
-        #self.tokens = []
-        #self.token_ids = []
-        #self.token_idx = 0
+
+    def __len__(self):
+        return len(self.sentences) // self.seq_len
 
     def __getattr__(self, name):
         return getattr(self.loader, name)
@@ -252,7 +250,7 @@ class RottenTomatoesGroundHogIterator(object):
         ###################################################################
         # At this point we have a set of labels and corresponding sentences.
         # We need to convert each sentence into a sequence of subsequences
-        # of some user-specified length `seqlen`.  If `seqlen` is 3, then,
+        # of some user-specified length `seq_len`.  If `seq_len` is 3, then,
         #
         #     "This is a sentence in a file"
         #
@@ -280,6 +278,8 @@ class RottenTomatoesGroundHogIterator(object):
 
             if self.sentence_iter is None:
                 sentence = self.sentences[self.sentence_idx]
+                # TODO: figure out how to prevent the analyzer from removing articles
+                # (e.g. "a").
                 tokens = self.vectorizer.build_analyzer()(sentence)
                 token_ids = []
                 for token in tokens:
@@ -287,7 +287,7 @@ class RottenTomatoesGroundHogIterator(object):
                         token_ids.append(self.vectorizer.vocabulary_[token])
                     except KeyError:
                         token_ids.append(len(self.vectorizer.vocabulary_))
-                self.sentence_iter = iter(Subsequence(token_ids, self.seqlen))
+                self.sentence_iter = iter(Subsequence(token_ids, self.seq_len))
 
             target = self.labels[self.sentence_idx]
 
@@ -296,7 +296,7 @@ class RottenTomatoesGroundHogIterator(object):
                 return seq, target, -1
             except StopIteration:
                 # We've reached the end of the sentence or the sentence
-                # is shorter than seqlen.
+                # is shorter than seq_len.
                 self.sentence_iter = None
                 self.sentence_idx += 1
                 continue
@@ -383,7 +383,7 @@ class TestRottenTomatoesGroundHogIterator(unittest.TestCase):
                 print(iterator.next())
             except StopIteration:
                 print("Done")
-
+                break
 
 if __name__ == '__main__':
     unittest.main()
