@@ -3,6 +3,8 @@
 import os.path
 import numpy as np
 
+from .utils import take_subset
+
 from pylearn2.datasets.dataset import Dataset
 from pylearn2.datasets.dense_design_matrix import DenseDesignMatrix
 
@@ -31,7 +33,7 @@ class SparseExpanderDataset(Dataset):
     SparseExpanderDataset takes a numpy/scipy sparse matrix and calls .todense()
     as the batches are passed out of the iterator.
     """
-    def __init__(self, X_path=None, y_path=None, from_scipy_sparse_dataset=None, zipped_npy=False, means_path=None, stds_path=None):
+    def __init__(self, X_path=None, y_path=None, from_scipy_sparse_dataset=None, zipped_npy=False, means_path=None, stds_path=None, start_fraction=None, end_fraction=None, start=None, stop=None):
 
         self.X_path = X_path
         self.y_path = y_path
@@ -59,8 +61,18 @@ class SparseExpanderDataset(Dataset):
                 logger.info('... loading sparse data set from a npy file')
                 self.y = scipy.sparse.csr_matrix(
                     numpy.load(y_path).item(), dtype=floatX)
+            nrow = self.y.shape[0]
+            self.y = np.asarray(self.y.todense())
+            self.y = self.y.reshape((nrow, 1))
+            # We load y as a sparse matrix, but convert it to a dense array,
+            # because otherwise MLP.mean_of_targets breaks.
         else:
             self.y = None
+
+        self.y = self.y.astype(np.float32)
+
+        self.X, self.y = take_subset(self.X, self.y,
+            start_fraction, end_fraction, start, stop)
 
         self.data_n_rows = self.X.shape[0]
         self.num_examples = self.data_n_rows
@@ -151,7 +163,6 @@ class SparseExpanderDataset(Dataset):
             # the stored data for "features" into one that the iterator
             # can return.
         # if
-        self.conv_fn = lambda x: x.todense()
         space, source = data_specs
         if isinstance(space, CompositeSpace):
             sub_spaces = space.components
@@ -162,8 +173,10 @@ class SparseExpanderDataset(Dataset):
 
         convert = []
         for sp, src in safe_zip(sub_spaces, sub_sources):
-            if src == 'features' or 'targets':
-                conv_fn = self.conv_fn
+            if src == 'features':
+                conv_fn = lambda x: x.todense()
+            elif src == 'targets':
+                conv_fn = lambda x: x
             else:
                 conv_fn = None
 
