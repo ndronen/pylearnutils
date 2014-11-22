@@ -7,8 +7,10 @@ __credits__ = ["Nicholas Dronen"]
 __license__ = "3-clause BSD"
 __maintainer__ = "Nicholas Dronen <ndronen@gmail.com>"
 
+import unittest
 import logging
 import numpy as np
+import theano
 import theano.tensor as T
 from pylearn2.models.mlp import Layer, Linear
 from pylearn2.utils import wraps
@@ -37,7 +39,7 @@ class Elementwise(Linear):
     ----------
     operation : str
         The element-wise operation to perform: "sum", "product",
-        "mean", "max", or "min".
+        "max", "min", or "mean".
     kwargs : dict
         Keyword arguments to pass to `Linear` class constructor
         or to implementation of operations.  Element-wise max (min)
@@ -50,118 +52,260 @@ class Elementwise(Linear):
     """
     def __init__(self, operation, **kwargs):
         super(Elementwise, self).__init__(**kwargs)
-        self.scanner = OuterScanner(InnerScanner(operation))
+        self.operation = operation
 
     @wraps(Layer.fprop)
     def fprop(self, state_below):
         W, = self.transformer.get_params()
-        return self.scanner.scan(W, state_below)
+        if self.operation == 'prod':
+            return elemwise_prod(W, state_below)
+        elif self.operation == 'sum':
+            return elemwise_sum(W, state_below)
+        elif self.operation == 'min':
+            return elemwise_min(W, state_below)
+        elif self.operation == 'max':
+            return elemwise_max(W, state_below)
+        else:
+            raise ValueError("Unknown operation type: " +
+                    str(self.operation))
 
     @wraps(Layer.cost)
     def cost(self, *args, **kwargs):
         raise NotImplementedError()
 
-class InnerScanner(object):
+def elemwise_prod_np(W, x):
     """
-    WRITEME
+    Find the non-zero rows of x (the input to the network).
+    If a row is a 0 vector, the sum will be 0, and applying
+    that value as a mask to W will cause W to be 0.  Then
+    multiplying the masked W by each row of x will cause
+    the undesired rows of W to become 0 vectors.  At that
+    point any operation (prod, sum, min, max) can be applied
+    along the columns of the masked W.
     """
-    def __init__(self, operation):
-        self.operation = operation
-        if not hasattr(self, self.operation):
-            raise ValueError("'operation' " + str(operation) + 
-                    " is invalid.  " + str(type(self)) + " doesn't have a " +
-                    "method named " + str(self.operation))
+    prod = np.zeros((x.shape[0], W.shape[1]))
+    for i in range(x.shape[0]):
+        mask = x[i, :]
+        mask = mask.reshape((mask.shape[0], 1))
+        temp = mask * W
+        temp[mask.flatten() == 0, :] = 1
+        prod[i, :] = np.prod(temp, axis=0)
 
-    def prod(self, W_row_index, accumulator, W):
-        """
-        Initial value of accumulator: ones (but this will produce
-        incorrect results if `x` is 0s.
-        WRITEME
-        """
-        return T.prod(accumulator, W[W_row_index, :])
+    rowsums = x.sum(axis=1)
+    prod[rowsums == 0, :] = 0
+    return prod
 
-    def sum(self, W_row_index, accumulator, W):
-        """
-        Initial value of accumulator: zeros.
-        WRITEME
-        """
-        return T.sum(accumulator, W[W_row_index, :])
+def elemwise_prod(W, x):
+    def scanfun(x_row_index, W, x):
+        mask = x[x_row_index, :]
+        mask = T.reshape(mask, (x.shape[1], 1))
+        masked = mask * W
+        # Set to 1 all rows of `masked` where the mask is 0.
+        mask = T.flatten(mask)
+        zeros = (mask - 1).nonzero()
+        masked = T.set_subtensor(masked[zeros, :], 1)
 
-    def min(self, W_row_index, accumulator, W):
-        """
-        Initial value of accumulator: np.finfo(theano.config.floatX).max
-        WRITEME
-        """
-        return T.min(accumulator, W[W_row_index, :])
+        # If necessary, replace the 1-vector rows with 0s.
+        return T.switch(
+                T.eq(T.sum(mask), 0),
+                T.zeros((1, W.shape[1])),
+                T.prod(masked, axis=0)).flatten()
 
-    def max(self, W_row_index, accumulator, W):
-        """
-        Initial value of accumulator: zeros.
-        WRITEME
-        """
-        return T.max(accumulator, W[W_row_index, :])
+    # Iterate over the rows of the input.
+    x_row_indices = T.arange(x.shape[0])
 
-    def get_outputs_info(self, W):
-        """
-        WRITEME
-        """
-        if self.operation == "prod":
-            return T.ones_like(W[0, :])
-        elif self.operation == "sum":
-            return T.zeros_like(W[0, :])
-        elif self.operation == "min":
-            return T.ones_like(W[0, :]) * np.fifo(theano.config.floatX) 
-        elif self.operation == "max":
-            return T.zeros_like(W[0, :])
+    results, updates = theano.scan(
+            fn=scanfun,
+            outputs_info=None,
+            sequences=x_row_indices,
+            non_sequences=[W, x])
 
-    def scan(self, state_below_row_index, accumulator, W, state_below):
-        """
-        WRITEME
-        """
-        W_row_indices = (state_below[state_below_row_index, :] > 0).nonzero()
-    
-        results, updates = theano.scan(
-            fn=getattr(self, self.operation),
-            outputs_info=self.get_outputs_info(),
-            ###############################################################
-            # The lambda expression will get one row index for W
-            # corresponding to each of the non-zero entries in this
-            # particular row of state_below.
-            ###############################################################
-            sequences=W_row_indices,
-            non_sequences=W)
-    
-        return results[-1]
+    return results
 
-class OuterScanner(object):
-    """
-    WRITEME
-    """
-    def __init__(self, inner_scanner):
-        self.inner_scanner = inner_scanner
+def elemwise_sum(W, x):
+    def scanfun(x_row_index, W, x):
+        mask = x[x_row_index, :]
+        mask = T.reshape(mask, (x.shape[1], 1))
+        masked = mask * W
+        return T.sum(masked, axis=0).flatten()
 
-    def scan(self, state_below):
+    # Iterate over the rows of the input.
+    x_row_indices = T.arange(x.shape[0])
+
+    results, updates = theano.scan(
+            fn=scanfun,
+            outputs_info=None,
+            sequences=x_row_indices,
+            non_sequences=[W, x])
+
+    return results
+
+def elemwise_min(W, x):
+    def scanfun(x_row_index, W, x):
+        mask = x[x_row_index, :]
+        mask = T.reshape(mask, (x.shape[1], 1))
+        masked = mask * W
+        # Set to 1 all rows of `masked` where the mask is 0.
+        mask = T.flatten(mask)
+        zeros = (mask - 1).nonzero()
+        masked = T.set_subtensor(masked[zeros, :], 10)
+
+        # If necessary, replace the large-number rows with 0s.
+        return T.switch(
+                T.eq(T.sum(mask), 0),
+                T.zeros((1, W.shape[1])),
+                T.min(masked, axis=0)).flatten()
+
+    # Iterate over the rows of the input.
+    x_row_indices = T.arange(x.shape[0])
+
+    results, updates = theano.scan(
+            fn=scanfun,
+            outputs_info=None,
+            sequences=x_row_indices,
+            non_sequences=[W, x])
+
+    return results
+
+def elemwise_mean(W, x):
+    def scanfun(x_row_index, W, x):
+        mask = x[x_row_index, :]
+        mask = T.reshape(mask, (x.shape[1], 1))
+        masked = mask * W
+        mask = T.flatten(mask)
+        nnz = mask.nonzero()[0].shape[0]
+        #mean = T.sum(masked, axis=0).flatten()/nnz
+        return T.switch(
+                # If this row of the input is all zeros, then
+                T.eq(T.sum(mask), 0),
+                # return a vector of 0s, else
+                T.zeros((1, W.shape[1])),
+                # return the average across the non-zero rows.
+                (T.sum(masked, axis=0)/nnz)).flatten()
+
+    # Iterate over the rows of the input.
+    x_row_indices = T.arange(x.shape[0])
+
+    results, updates = theano.scan(
+            fn=scanfun,
+            outputs_info=None,
+            sequences=x_row_indices,
+            non_sequences=[W, x])
+
+    return results
+
+class TestElementwise(unittest.TestCase):
+    def setUp(self):
+        self.rng = np.random.RandomState(seed=17)
+        self.nin = 5
+        self.nhid = 3
+        self.W = self.rng.uniform(size=(self.nin, self.nhid))
+        self.W = self.W.astype(theano.config.floatX)
+
+    def test_elemwise_prod_np(self):
         """
-        WRITEME
+        Notes
+        --------
+        Two rows of inputs, one that has a single non-zero entry,
+        one that has no non-zero entries.
         """
-        ###################################################################
-        # Pylearn2 has weight matrices W with shape nin X nhid, inputs x
-        # that are nobs X nin, and the matrix multiplication is done by
-        # T.dot(x, W).
-        ###################################################################
-        state_below_row_indices = T.arange(state_below.shape[0])
-    
-        results, _= theano.scan(
-            ###############################################################
-            # The arguments to this function are (1) the current index into x,
-            # (2) an accumulator, (3) a weight matrix, and (4) x itself.
-            # x is a matrix of inputs, with one row per input example,
-            # so when we call scan() here, we ask the function to compute the
-            # element-wise product of W and each individual row of x.
-            ###############################################################
-            fn=self.inner_scanner.scan,
-            outputs_info=inner_scanner.get_outputs_info(),
-            sequences=state_below_row_indices,
-            non_sequences=[W, state_below])
-    
-        return results
+        x = np.zeros((2, self.nin))
+        x[0, 0] = 1
+        prod = elemwise_prod_np(self.W, x)
+
+        self.assertTrue(prod.shape == (2, self.nhid))
+        self.assertTrue(np.all(prod[0, :] == self.W[0, :]))
+        self.assertTrue(np.all(prod[1, :] == np.zeros((1, self.nhid))))
+
+    def test_elemwise_prod(self):
+        """
+        Notes
+        --------
+        Two rows of inputs, one that has a single non-zero entry,
+        one that has no non-zero entries.
+        """
+        x = np.zeros((2, self.nin))
+        x = x.astype(np.int8)
+        x[0, 0] = 1
+
+        Wt = T.matrix('W')
+        xt = T.matrix('x')
+
+        results = elemwise_prod(Wt, xt)
+        f = theano.function([Wt, xt], outputs=results)
+        prod = f(self.W, x)
+
+        self.assertTrue(prod.shape == (2, self.nhid))
+        self.assertTrue(np.all(prod[0, :] == self.W[0, :]))
+        self.assertTrue(np.all(prod[1, :] == np.zeros((1, self.nhid))))
+
+    def test_elemwise_sum(self):
+        """
+        Notes
+        --------
+        Two rows of inputs, one that has a single non-zero entry,
+        one that has no non-zero entries.
+        """
+        x = np.zeros((2, self.nin))
+        x = x.astype(np.int8)
+        x[0, 0] = 1
+        x[0, 1] = 1
+
+        Wt = T.matrix('W')
+        xt = T.matrix('x')
+        results = elemwise_sum(Wt, xt)
+        f = theano.function([Wt, xt], outputs=results)
+        sum = f(self.W, x)
+
+        self.assertTrue(sum.shape == (2, self.nhid))
+        self.assertTrue(np.all(sum[0, :] == np.sum(self.W[0:2, :], axis=0)))
+        self.assertTrue(np.all(sum[1, :] == np.zeros((1, self.nhid))))
+
+    def test_elemwise_min(self):
+        """
+        Notes
+        --------
+        Two rows of inputs, one that has a single non-zero entry,
+        one that has no non-zero entries.
+        """
+        x = np.zeros((2, self.nin))
+        x = x.astype(np.int8)
+        x[0, 0] = 1
+        x[0, 4] = 1
+
+        Wt = T.matrix('W')
+        xt = T.matrix('x')
+        results = elemwise_min(Wt, xt)
+        f = theano.function([Wt, xt], outputs=results)
+        min = f(self.W, x)
+
+        self.assertTrue(min.shape == (2, self.nhid))
+        self.assertTrue(np.all(min[0, :] == np.min(self.W[[0,4], :], axis=0)))
+        self.assertTrue(np.all(min[1, :] == np.zeros((1, self.nhid))))
+
+    def test_elemwise_mean(self):
+        """
+        Notes
+        --------
+        Two rows of inputs, one that has a single non-zero entry,
+        one that has no non-zero entries.
+        """
+        x = np.zeros((2, self.nin))
+        x = x.astype(np.int8)
+        x[0, 0] = 1
+        x[0, 4] = 1
+
+        Wt = T.matrix('W')
+        xt = T.matrix('x')
+        results = elemwise_mean(Wt, xt)
+        f = theano.function([Wt, xt], outputs=results)
+        mean = f(self.W, x)
+
+        self.assertTrue(mean.shape == (2, self.nhid))
+        self.assertTrue(np.all(mean[0, :] == np.mean(self.W[[0,4], :], axis=0)))
+        self.assertTrue(np.all(mean[1, :] == np.zeros((1, self.nhid))))
+
+if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO)
+    logging.getLogger(__name__).setLevel(logging.INFO)
+    unittest.main()
