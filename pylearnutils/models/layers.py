@@ -56,18 +56,40 @@ class Elementwise(Linear):
 
     @wraps(Layer.fprop)
     def fprop(self, state_below):
+        assert state_below.ndim == 2
+
         W, = self.transformer.get_params()
         if self.operation == 'prod':
-            return elemwise_prod(W, state_below)
+            result = elemwise_prod(W, state_below)
         elif self.operation == 'sum':
-            return elemwise_sum(W, state_below)
+            result = elemwise_sum(W, state_below)
         elif self.operation == 'min':
-            return elemwise_min(W, state_below)
+            result = elemwise_min(W, state_below)
         elif self.operation == 'max':
-            return elemwise_max(W, state_below)
+            result = elemwise_max(W, state_below)
+        elif self.operation == 'mean':
+            result = elemwise_mean(W, state_below)
         else:
             raise ValueError("Unknown operation type: " +
                     str(self.operation))
+
+        ###################################################################
+        # TODO: change the elemwise_* functions to return a binary #
+        # mask denoting the features (the rows of the weight matrix) # that
+        # were selected by this batch of inputs.  Then use that # mask to
+        # modify the next parameter update so that the only parameters
+        # that are updated are those that belong to features that were
+        # used to represent this batch of inputs.
+        # 
+        # Note: if we assign to self.mask_weights and self.weights, then
+        # Linear._modify_updates will ensure that only the weights of the
+        # unmasked features are updated.
+        ###################################################################
+
+        # self.mask_weights = mask
+        # self.mask = mask
+
+        return result.astype(theano.config.floatX)
 
     @wraps(Layer.cost)
     def cost(self, *args, **kwargs):
