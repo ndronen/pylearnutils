@@ -189,6 +189,30 @@ def elemwise_min(W, x):
 
     return results
 
+def elemwise_max(W, x):
+    def scanfun(x_row_index, W, x):
+        mask = x[x_row_index, :]
+        mask = T.reshape(mask, (x.shape[1], 1))
+        masked = mask * W
+        mask = T.flatten(mask)
+
+        # If necessary, replace the large-number rows with 0s.
+        return T.switch(
+                T.eq(T.sum(mask), 0),
+                T.zeros((1, W.shape[1])),
+                T.max(masked, axis=0)).flatten()
+
+    # Iterate over the rows of the input.
+    x_row_indices = T.arange(x.shape[0])
+
+    results, updates = theano.scan(
+            fn=scanfun,
+            outputs_info=None,
+            sequences=x_row_indices,
+            non_sequences=[W, x])
+
+    return results
+
 def elemwise_mean(W, x):
     def scanfun(x_row_index, W, x):
         mask = x[x_row_index, :]
