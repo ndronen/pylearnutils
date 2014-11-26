@@ -55,23 +55,32 @@ class SparseExpanderDataset(Dataset):
         if self.y_path != None:
             if zipped_npy == True:
                 logger.info('... loading sparse data set from a zip npy file')
-                self.y = scipy.sparse.csr_matrix(
-                    numpy.load(gzip.open(y_path)), dtype=floatX).todense()
+                #self.y = scipy.sparse.csr_matrix(
+                #    numpy.load(gzip.open(y_path)), dtype=floatX).todense()
+                self.y = numpy.load(gzip.open(y_path))
+                if not isinstance(self.y, np.ndarray):
+                    print("calling y.item")
+                    self.y = y.item()
             else:
                 logger.info('... loading sparse data set from a npy file')
-                self.y = scipy.sparse.csr_matrix(
-                    numpy.load(y_path).item(), dtype=floatX)
+                self.y = numpy.load(y_path)
+                if not isinstance(self.y, np.ndarray):
+                    print("calling y.item")
+                    self.y = self.y.item()
+
             # We load y as a sparse matrix, but convert it to a dense array,
             # because otherwise MLP.mean_of_targets breaks.
             orig_shape = self.y.shape
-            self.y = np.asarray(self.y.todense())
+            if scipy.sparse.issparse(self.y):
+                self.y = np.asarray(self.y.todense())
             # Only make this a column vector if it's not one-hot.
-            if 1 in orig_shape:
+            if 1 in orig_shape or len(orig_shape) == 1:
+                nrow = np.max(orig_shape)
                 self.y = self.y.reshape((nrow, 1))
         else:
             self.y = None
 
-        self.y = self.y.astype(np.float32)
+        self.y = self.y.astype(floatX)
 
         self.X, self.y = take_subset(self.X, self.y,
             start_fraction, end_fraction, start, stop)
