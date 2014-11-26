@@ -1,5 +1,6 @@
 import numpy as np
 import theano
+import theano.tensor as T
 from pylearn2.models.mlp import Layer
 from pylearn2.utils import wraps
 
@@ -68,11 +69,11 @@ class LayerDelegator(Layer):
 
     @wraps(Layer.get_weight_decay)
     def get_weight_decay(self, coeff):
-        return self.layer.get_weight_decay()
+        return self.layer.get_weight_decay(coeff)
 
     @wraps(Layer.get_l1_weight_decay)
     def get_l1_weight_decay(self, coeff):
-        return self.layer.get_l1_weight_decay()
+        return self.layer.get_l1_weight_decay(coeff)
 
     @wraps(Layer._modify_updates)
     def _modify_updates(self, updates):
@@ -126,6 +127,63 @@ class WeightsFromNpyFileLayer(LayerDelegator):
         if self.freeze_params:
             return []
         return self.layer.get_params()
+
+    def __getattr__(self, name):
+        return getattr(self.layer, name)
+
+    def __setattr__(self, name, value):
+        self.__dict__[name] = value
+
+    def __getstate__(self):
+        return self.__dict__
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+
+class MaskingLayer(LayerDelegator):
+    """
+    WRITEME
+
+    Parameters
+    ----------
+    layer: pylearn2.models.mlp.Layer-like
+        The inner layer.  The masking layer will mask the parameter
+        updates of the inner layer.
+    mask: bool
+        Whether to perform masking.  
+    """
+    def __init__(self, layer, mask=True):
+        super(MaskingLayer, self).__init__(layer=layer)
+        self.masking_enabled = mask
+
+    @wraps(Layer.fprop)
+    def fprop(self, state_below):
+        assert state_below.ndim == 2
+
+        # The MatrixMul class in pylearn2 does T.dot(x, self.W), so x
+        # must be (number of examples) X (width of input).  Here x
+        # is called `state_below`.  We want the mask to be the same
+        # shape as W, as we're going to multiply the mask and W
+        # elementwise.  So the mask needs to (width of input) X (number
+        # of hidden units).  Taking the columnar sum of x will yield a
+        # 1-row matrix with a non-zero value for the inputs of x that
+        # are non-zero.  Binarizing that row, repeating it as many 
+        # times as there are hidden units, then transposing it should
+        # yield a mask with the desired shape and values.
+
+        if self.masking_enabled:
+            # Take columnar sum.
+            mask = state_below.sum(axis=0)
+            # Binarize it.
+            mask = T.set_subtensor(mask[mask != 0], 1)
+            # Repeat it 
+            mask = mask.repeat(self.layer.get_output_space().dim, axis=0)
+            # Transpose it.
+            mask = mask.T
+
+            self.mask_weights = self.mask = mask
+
+        return self.layer.fprop(state_below)
 
     def __getattr__(self, name):
         return getattr(self.layer, name)
