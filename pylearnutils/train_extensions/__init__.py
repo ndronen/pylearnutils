@@ -13,3 +13,15 @@ class MonitorKeepModelEveryEpoch(TrainExtension):
             save_path = "{0}_{1:04d}.joblib".format(self.save_prefix, self.i)
             joblib.dump(model, save_path)
         self.i += 1
+
+class MonitorBasedSaveBestAfterKEpochs(MonitorBasedSaveBest):
+    def __init__(self, epochs_before_saving, channel_name, **kwargs):
+        super(MonitorBasedSaveBestAfterKEpochs).__init__(channel_name, **kwargs)
+        self.epochs_before_saving = epochs_before_saving
+        self.epoch = 0
+
+    def on_monitor(self, model, dataset, algorithm):
+        if self.epoch > self.epochs_before_saving:
+            return super(MonitorBasedSaveBestAfterKEpochs, self).on_monitor(
+                    model, dataset, algorithm)
+        self.epoch += 1
