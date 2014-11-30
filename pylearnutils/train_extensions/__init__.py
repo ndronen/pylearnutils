@@ -15,14 +15,19 @@ class MonitorKeepModelEveryEpoch(TrainExtension):
             joblib.dump(model, save_path)
         self.i += 1
 
-class MonitorBasedSaveBestAfterKEpochs(MonitorBasedSaveBest):
-    def __init__(self, epochs_before_saving, channel_name, **kwargs):
-        super(MonitorBasedSaveBestAfterKEpochs).__init__(channel_name, **kwargs)
-        self.epochs_before_saving = epochs_before_saving
+class SaveBestAfterKEpochs(MonitorBasedSaveBest):
+    """
+    It seems that TrainExtension, from which MonitorBasedSaveBest,
+    is a new-style class, so I'd expect to be able to call super
+    from this subclass.  I had a bit of trouble getting that to work
+    so I'm invoking the superclass methods in an old-style way here.
+    """
+    def __init__(self, k, channel_name, save_path):
+        MonitorBasedSaveBest.__init__(self, channel_name, save_path)
+        self.k = k
         self.epoch = 0
 
     def on_monitor(self, model, dataset, algorithm):
-        if self.epoch > self.epochs_before_saving:
-            return super(MonitorBasedSaveBestAfterKEpochs, self).on_monitor(
-                    model, dataset, algorithm)
+        if self.epoch > self.k:
+            return MonitorBasedSaveBest.on_monitor(self, model, dataset, algorithm)
         self.epoch += 1
