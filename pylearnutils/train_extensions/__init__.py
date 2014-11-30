@@ -1,4 +1,5 @@
 from pylearn2.train_extensions import TrainExtension
+from pylearn2.train_extensions.best_params import MonitorBasedSaveBest
 
 import joblib
 
