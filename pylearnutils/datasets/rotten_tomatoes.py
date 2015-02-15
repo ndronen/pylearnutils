@@ -10,11 +10,11 @@ from sklearn.feature_extraction.text import CountVectorizer
 from pylearn2.datasets.dense_design_matrix import DenseDesignMatrix
 
 class RottenTomatoesLoader(object):
-    def __init__(self, which_set, granularity='fine', dataset_path='/home/ndronen/proj/dissertation/projects/deeplsa/data/stanfordSentimentTreebank/'):
+    def __init__(self, mode, granularity='fine', dataset_path='/home/ndronen/proj/dissertation/projects/deeplsa/data/stanfordSentimentTreebank/'):
 
-        if which_set not in ['train', 'dev', 'test']:
-            raise ValueError('invalid which_set: ' + str(which_set) +
-                    '.  should be train, dev, or test')
+        if mode not in ['train', 'valid', 'test']:
+            raise ValueError('invalid mode: ' + str(mode) +
+                    '.  should be train, valid, or test')
 
         if granularity not in ['fine', 'binary']:
             raise ValueError('invalid granularity: ' + str(granularity) +
@@ -27,7 +27,7 @@ class RottenTomatoesLoader(object):
         self.__dict__.update(locals())
         del self.self
 
-        self.idx = self._load_indices(which_set)
+        self.idx = self._load_indices(mode)
         self.sentences = self._load_sentences(self.idx)
         self.phrase_ids = self._load_phrase_ids(self.sentences)
         self.labels = self._load_labels(self.phrase_ids)
@@ -48,47 +48,47 @@ class RottenTomatoesLoader(object):
         # From the original paper (Socher et al 2013):
         #
         # Sentences in the treebank were split into a train (8544),
-        # dev (1101), and test splits (2210) and tehse splits are made
+        # valid (1101), and test splits (2210) and tehse splits are made
         # available with the data release.  We also analyze performance
         # on only positive and negative sentences, ignoring the neutral
         # class.  This filters about 20% of the data with the three set
         # having 6920/872/1821 sentences.
         ###################################################################
         if self.granularity == 'fine':
-            if self.which_set == 'train':
+            if self.mode == 'train':
                 assert len(self.sentences) == 8544
                 assert len(self.labels) == 8544
-            elif self.which_set == 'dev':
+            elif self.mode == 'valid':
                 assert len(self.sentences) == 1101
                 assert len(self.labels) == 1101
             else:
                 assert len(self.sentences) == 2210
                 assert len(self.labels) == 2210
         else:
-            if self.which_set == 'train':
+            if self.mode == 'train':
                 assert len(self.sentences) == 6920
                 assert len(self.labels) == 6920
-            elif self.which_set == 'dev':
+            elif self.mode == 'valid':
                 assert len(self.sentences) == 872
                 assert len(self.labels) == 872
             else:
                 assert len(self.sentences) == 1821
                 assert len(self.labels) == 1821
 
-    def _load_indices(self, which_set):
+    def _load_indices(self, mode):
         split_file = self.dataset_path + 'datasetSplit.txt'
 
         # ID, Split ID
         splits = pd.read_csv(split_file, delimiter=',')
 
-        if which_set == 'train':
+        if mode == 'train':
             label = 1
-        elif which_set == 'dev':
+        elif mode == 'valid':
             label = 3
-        elif which_set == 'test':
+        elif mode == 'test':
             label = 2
         else:
-            raise ValueError('invalid which_set:' + str(which(set)))
+            raise ValueError('invalid mode:' + str(which(set)))
 
         idx = splits[splits.splitset_label == label].sentence_index
         return idx.astype(np.int)
@@ -158,7 +158,7 @@ class RottenTomatoesLoader(object):
         return classes.astype(np.int)
 
 class RottenTomatoesBagOfWordsDataset(DenseDesignMatrix):
-    def __init__(self, which_set, granularity='fine', dataset_path='/home/ndronen/proj/dissertation/projects/deeplsa/data/stanfordSentimentTreebank/', vectorizer=None, one_hot=False, task='classification'):
+    def __init__(self, mode, granularity='fine', dataset_path='/home/ndronen/proj/dissertation/projects/deeplsa/data/stanfordSentimentTreebank/', vectorizer=None, one_hot=False, task='classification'):
 
         self.__dict__.update(locals())
         del self.self
@@ -177,7 +177,7 @@ class RottenTomatoesBagOfWordsDataset(DenseDesignMatrix):
             self.vectorizer.fit(train_loader.sentences)
     
         self.loader = RottenTomatoesLoader(
-                which_set, granularity, dataset_path)
+                mode, granularity, dataset_path)
 
         self.y = np.array(self.loader.labels)
         self.X = self.vectorizer.transform(self.loader.sentences).todense()
@@ -203,6 +203,9 @@ class Subsequence(object):
     """
     """
     def __init__(self, sequence, k):
+        if len(sequence) < k:
+            raise ValueError("sequence must be at least length " + str(k) +
+                    ": " + str(sequence))
         self.subsequences = zip(*(sequence[i:] for i in range(k)))
 
     def __iter__(self):
@@ -211,7 +214,7 @@ class Subsequence(object):
 class RottenTomatoesGroundHogIterator(object):
     """
     """
-    def __init__(self, which_set, granularity='fine', dataset_path='/home/ndronen/proj/dissertation/projects/deeplsa/data/stanfordSentimentTreebank/', vectorizer=None, task='classification', seq_len=2):
+    def __init__(self, mode, granularity='fine', dataset_path='/home/ndronen/proj/dissertation/projects/deeplsa/data/stanfordSentimentTreebank/', vectorizer=None, task='classification', seq_len=2, use_infinite_loop=True):
 
         self.__dict__.update(locals())
         del self.self
@@ -228,15 +231,25 @@ class RottenTomatoesGroundHogIterator(object):
             train_loader = RottenTomatoesLoader(
                 'train', 'fine', dataset_path)
             self.vectorizer.fit(train_loader.sentences)
+
+        print("vocabulary size is " + str(len(self.vectorizer.vocabulary_)))
     
         self.loader = RottenTomatoesLoader(
-                which_set, granularity, dataset_path)
+                mode, granularity, dataset_path)
 
         self.sentence_idx = 0
         self.sentence_iter = None
 
     def __len__(self):
         return len(self.sentences) // self.seq_len
+
+    @property
+    def next_offset(self):
+        return self.sentence_idx
+
+    def start(self, index):
+        assert index <= len(self.sentences)
+        self.sentence_idx = index
 
     def __getattr__(self, name):
         return getattr(self.loader, name)
@@ -270,17 +283,29 @@ class RottenTomatoesGroundHogIterator(object):
         ###################################################################
 
         while True:
-            # We've reached the end of the corpus.  For now just stop.
+            # By default don't reset the state of the hidden layer.
+            reset_hidden_state = 0
+
             if self.sentence_idx == len(self.sentences):
+                # Return to the beginning of the corpus.
+                print("reached end of corpus")
                 self.sentence_iter = None
                 self.sentence_idx = 0
-                raise StopIteration()
+                reset_hidden_state = 1
+                if not self.use_infinite_loop:
+                    raise StopIteration()
 
             if self.sentence_iter is None:
+                #print("creating new sentence iterator: " + 
+                #   str(self.sentence_idx) + "/" + str(len(self.sentences)))
                 sentence = self.sentences[self.sentence_idx]
-                # TODO: figure out how to prevent the analyzer from removing articles
-                # (e.g. "a").
+                # TODO: figure out how to prevent the analyzer from
+                # removing articles (e.g. "a").
                 tokens = self.vectorizer.build_analyzer()(sentence)
+                if len(tokens) < self.seq_len:
+                    # For now just skip sentences that are too short.
+                    self.sentence_idx += 1
+                    continue
                 token_ids = []
                 for token in tokens:
                     try:
@@ -288,17 +313,29 @@ class RottenTomatoesGroundHogIterator(object):
                     except KeyError:
                         token_ids.append(len(self.vectorizer.vocabulary_))
                 self.sentence_iter = iter(Subsequence(token_ids, self.seq_len))
+                reset_hidden_state = 1
 
+            # Label is a number from 1-5.
             target = self.labels[self.sentence_idx]
+            target -= 1
+            y = np.zeros(shape=(5,), dtype=np.int)
+            y[target] = 1
+            #y = np.array([target])
 
             try:
                 seq = self.sentence_iter.next()
-                return seq, target, -1
+                return {
+                    "x": np.array(seq),
+                    "y": y,
+                    "reset": 1-reset_hidden_state
+                }
             except StopIteration:
                 # We've reached the end of the sentence or the sentence
                 # is shorter than seq_len.
+                #print("reached end of sentence\n")
                 self.sentence_iter = None
                 self.sentence_idx += 1
+                reset_hidden_state = 1
                 continue
 
 
@@ -314,17 +351,17 @@ class TestRottenTomatoesBagOfWordsDataset(unittest.TestCase):
     @unittest.skip("only use this to write out the dataset to files")
     def test_write_dataset(self):
         rt = RottenTomatoesBagOfWordsDataset(
-                which_set='train', granularity='fine')
+                mode='train', granularity='fine')
         joblib.dump(rt.X, "sentiment-treebank-train-fine-X.joblib")
         joblib.dump(rt.y, "sentiment-treebank-train-fine-y.joblib")
         self.write_sentences(rt.sentences,
             "sentiment-treebank-train-fine-sentences.txt")
 
-        rt = RottenTomatoesBagOfWordsDataset('dev', granularity='fine')
-        joblib.dump(rt.X, "sentiment-treebank-dev-fine-X.joblib")
-        joblib.dump(rt.y, "sentiment-treebank-dev-fine-y.joblib")
+        rt = RottenTomatoesBagOfWordsDataset('valid', granularity='fine')
+        joblib.dump(rt.X, "sentiment-treebank-valid-fine-X.joblib")
+        joblib.dump(rt.y, "sentiment-treebank-valid-fine-y.joblib")
         self.write_sentences(rt.sentences,
-            "sentiment-treebank-dev-fine-sentences.txt")
+            "sentiment-treebank-valid-fine-sentences.txt")
 
         rt = RottenTomatoesBagOfWordsDataset('test', granularity='fine')
         joblib.dump(rt.X, "sentiment-treebank-test-fine-X.joblib")
@@ -333,17 +370,17 @@ class TestRottenTomatoesBagOfWordsDataset(unittest.TestCase):
             "sentiment-treebank-test-fine-sentences.txt")
 
         rt = RottenTomatoesBagOfWordsDataset(
-                which_set='train', granularity='binary')
+                mode='train', granularity='binary')
         joblib.dump(rt.X, "sentiment-treebank-train-binary-X.joblib")
         joblib.dump(rt.y, "sentiment-treebank-train-binary-y.joblib")
         self.write_sentences(rt.sentences,
             "sentiment-treebank-train-binary-sentences.txt")
 
-        rt = RottenTomatoesBagOfWordsDataset('dev', granularity='binary')
-        joblib.dump(rt.X, "sentiment-treebank-dev-binary-X.joblib")
-        joblib.dump(rt.y, "sentiment-treebank-dev-binary-y.joblib")
+        rt = RottenTomatoesBagOfWordsDataset('valid', granularity='binary')
+        joblib.dump(rt.X, "sentiment-treebank-valid-binary-X.joblib")
+        joblib.dump(rt.y, "sentiment-treebank-valid-binary-y.joblib")
         self.write_sentences(rt.sentences,
-            "sentiment-treebank-dev-binary-sentences.txt")
+            "sentiment-treebank-valid-binary-sentences.txt")
 
         rt = RottenTomatoesBagOfWordsDataset('test', granularity='binary')
         joblib.dump(rt.X, "sentiment-treebank-test-binary-X.joblib")
@@ -374,13 +411,14 @@ class TestRottenTomatoesLoader(unittest.TestCase):
 
 class TestRottenTomatoesGroundHogIterator(unittest.TestCase):
 
+    @unittest.skip("this can take a long time")
     def test_init(self):
         rt = RottenTomatoesGroundHogIterator(
-                which_set='train', granularity='fine')
+                mode='train', granularity='fine')
         iterator = iter(rt)
         while True:
             try:
-                print(iterator.next())
+                iterator.next()
             except StopIteration:
                 print("Done")
                 break
