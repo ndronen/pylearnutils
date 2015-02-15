@@ -196,3 +196,34 @@ class MaskingLayer(LayerDelegator):
 
     def __setstate__(self, state):
         self.__dict__.update(state)
+
+class CorruptionLayer(LayerDelegator):
+    """
+    A layer for adding noise to the output of a layer of a network.
+
+    Parameters
+    ----------
+    layer : pylearn2.models.mlp.Layer
+        A Layer instance (e.g. Tanh, RectifiedLinear, SpaceConverter)
+    corruptor: pylearn2.corruption.Corruptor
+        A corruptor instance.
+    """
+    def __init__(self, layer, corruptor):
+        super(CorruptionLayer, self).__init__(layer=layer)
+        self.corruptor = corruptor
+
+    @wraps(Layer.fprop)
+    def fprop(self, state_below):
+        return self.corruptor(self.layer.fprop(state_below))
+
+    def __getattr__(self, name):
+        return getattr(self.layer, name)
+
+    def __setattr__(self, name, value):
+        self.__dict__[name] = value
+
+    def __getstate__(self):
+        return self.__dict__
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
