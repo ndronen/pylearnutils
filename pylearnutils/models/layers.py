@@ -1,5 +1,6 @@
 """
-Experimental layers.
+Experimental layers.  Caveat: these were some of the first Pylearn2 layers
+I wrote; they're not very efficient.
 """
 __authors__ = "Nicholas Dronen"
 __copyright__ = "Copyright 2014-2015, Nicholas Dronen"
@@ -76,10 +77,21 @@ class Elementwise(Linear):
         ###################################################################
         # TODO: change the elemwise_* functions to return a binary #
         # mask denoting the features (the rows of the weight matrix) # that
-        # were selected by this batch of inputs.  Then use that # mask to
+        # were selected by this batch of inputs.  Then use that mask to
         # modify the next parameter update so that the only parameters
         # that are updated are those that belong to features that were
         # used to represent this batch of inputs.
+        #
+        # TODO: write a masking layer for sparse inputs that only
+        # allows the activated/selected features of the weight matrix to
+        # be updated during backpropagation.  This could be useful for
+        # performing proper credit assignment in the first hidden layer.
+        # 
+        # TODO: write a monitor extension that writes out the weight 
+        # matrix of a network after every iteration.  Running with
+        # a batch size of 1 will allow me to see which weights are 
+        # adjusted in relation to the inputs.  Do all weights of the
+        # first hidden layer change after every backprop?
         # 
         # Note: if we assign to self.mask_weights and self.weights, then
         # Linear._modify_updates will ensure that only the weights of the
