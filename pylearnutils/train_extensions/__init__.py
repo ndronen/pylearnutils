@@ -47,3 +47,27 @@ class SaveBestAfterKEpochs(MonitorBasedSaveBest):
             return MonitorBasedSaveBest.on_monitor(self, model, dataset, algorithm)
         self.epoch += 1
 
+class CurriculumDatasetEpochController(TrainExtension):
+    def __init__(self, dataset, epochs):
+        """
+        """
+        self.__dict__.update(locals())
+        del self.self
+        self.countdown = self.epochs
+
+    def on_monitor(self, model, dataset, algorithm):
+        """
+        """
+        self.countdown = self.countdown - 1
+
+        #print('countdown', self.countdown)
+
+        if self.countdown == 0:
+            # Reduce the fraction of permutation by 10%.  This assumes we
+            # are starting with a high fraction of permutation and working
+            # down from there.
+            fraction = self.dataset.fraction
+            #print('changing permutation fraction', fraction, fraction * 0.9)
+            fraction *= 0.9
+            self.dataset.set_fraction(fraction)
+            self.countdown == self.epochs
