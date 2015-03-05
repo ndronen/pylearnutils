@@ -16,10 +16,14 @@ class MonitorKeepModelEveryEpoch(TrainExtension):
         self.i += 1
 
 class SaveWeightsWithinEpoch(object):
-    def __init__(self, save_prefix, save_freq=1):
-        self.save_prefix = save_prefix
-        self.save_freq = save_freq
-        self.param_name = 'h1_W'
+    """
+    Saves the weights of model parameters at specified intervals.
+    
+    Include an instance of this class in the list passed to the
+    update_callbacks argument of the SGD class.
+    """
+    def __init__(self, save_prefix, param_name, save_freq=1):
+        self.__dict__.update(locals())
         self.i = 1
 
     def __call__(self, sgd):
