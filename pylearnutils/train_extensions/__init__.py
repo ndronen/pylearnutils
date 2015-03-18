@@ -15,6 +15,31 @@ class MonitorKeepModelEveryEpoch(TrainExtension):
             joblib.dump(model, save_path)
         self.i += 1
 
+class EpochBasedScheduledNoiseController(TrainExtension):
+    """
+    Increases or decreases the level of noise in the training data
+    after each fixed number of epochs.  The current implementation
+    is a hack just to move things along.
+
+    Ultimately the knowledge of the noise-adding protocol (here,
+    a fraction of the sentence to permute) should be decoupled
+    from the schedule.  The Dataset chould, for instance, have a method
+    that returns an object that knows how to change the kind or level
+    of noise that is added to the training data.  This TrainExtension
+    would then only need to get that object and call a method to make
+    it change the noise-adding protocol.
+    """
+    def __init__(self, num_epochs):
+        self.__dict__.update(locals())
+        del self.self
+        self.i = 1
+
+    def on_monitor(self, model, dataset, algorithm):
+        if self.i % self.num_epochs == 0:
+            next_fraction = dataset.get_next_fraction()
+            dataset.set_fraction(next_fraction)
+        self.i += 1
+
 class SaveWeightsWithinEpoch(object):
     """
     Saves the weights of model parameters at specified intervals.
@@ -50,4 +75,5 @@ class SaveBestAfterKEpochs(MonitorBasedSaveBest):
         if self.epoch > self.k:
             return MonitorBasedSaveBest.on_monitor(self, model, dataset, algorithm)
         self.epoch += 1
+
 
