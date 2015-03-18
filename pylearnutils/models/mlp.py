@@ -2,7 +2,26 @@ import numpy as np
 import theano
 import theano.tensor as T
 from pylearn2.models.mlp import Layer
-from pylearn2.utils import wraps
+from pylearn2.utils import wraps, sharedX
+
+class NormalizingLayer(Layer):
+    def __init__(self, layer_name, denoms):
+        self.layer_name = layer_name
+        self.ndenoms = len(denoms)
+        self.denoms = sharedX(denoms, name='denoms')
+        super(NormalizingLayer, self).__init__()
+
+    @wraps(Layer.get_params)
+    def get_params(self):
+        return []
+
+    @wraps(Layer.set_input_space)
+    def set_input_space(self, space):
+        self.input_space = space
+        self.output_space = space
+
+    def fprop(self, state_below):
+        return tuple(state_below[i] / self.denoms[i] for i in range(self.ndenoms))
 
 class LayerDelegator(Layer):
     def __init__(self, layer):
@@ -120,6 +139,7 @@ class WeightsFromNpyFileLayer(LayerDelegator):
         self.layer.set_input_space(space)
         W = np.load(self.path)
         W = W.astype(theano.config.floatX)
+        print(self, space)
         self.layer.set_weights(W)
 
     @wraps(Layer.get_params)
